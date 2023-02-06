@@ -338,6 +338,21 @@ func TestIndexColumns(t *testing.T) {
 	}
 }
 
+//func TestInvalidatedUDF(t *testing.T) {
+//	cat := testcat.New()
+//	_, err := cat.ExecuteDDL("CREATE TABLE a (i INT, j INT)")
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//
+//	var md opt.Metadata
+//	tn := tree.NewUnqualifiedTableName("a")
+//	a := md.AddTable(cat.Table(tn), tn)
+//	b := a.ColumnID(0)
+//	b2 := a.ColumnID(1)
+//
+}
+
 // TestDuplicateTable tests that we can extract a set of columns from an index ordinal.
 func TestDuplicateTable(t *testing.T) {
 	cat := testcat.New()

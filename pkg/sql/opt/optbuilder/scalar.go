@@ -619,6 +619,7 @@ func (b *Builder) buildUDF(
 	colRefs *opt.ColSet,
 ) (out opt.ScalarExpr) {
 	o := f.ResolvedOverload()
+	//b.factory.Metadata().AddUserDefinedFn(o)
 
 	// Build the argument expressions.
 	var args memo.ScalarListExpr
@@ -715,6 +716,7 @@ func (b *Builder) buildUDF(
 					b.factory.ConstructVariable(physProps.Presentation[0].ID),
 					f.ResolvedType(),
 				)
+
 				stmtScope = bodyScope.push()
 				col := b.synthesizeColumn(stmtScope, scopeColName(""), f.ResolvedType(), nil /* expr */, cast)
 				expr = b.constructProject(expr, []scopeColumn{*col})
@@ -738,6 +740,8 @@ func (b *Builder) buildUDF(
 			Volatility: o.Volatility,
 		},
 	)
+
+	b.factory.Metadata().AddUserDefinedFn(o /* return type mapping */, f.ResolvedType())
 
 	// If the UDF is strict, it should not be invoked when any of the arguments
 	// are NULL. To achieve this, we wrap the UDF in a CASE expression like:

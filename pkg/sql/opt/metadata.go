@@ -13,6 +13,7 @@ package opt
 import (
 	"context"
 	"fmt"
+	ctlg "github.com/cockroachdb/cockroach/pkg/sql/catalog"
 	"math/bits"
 	"strings"
 
@@ -100,6 +101,7 @@ type Metadata struct {
 	//  this map when adding a table via metadata.AddTable.
 	userDefinedTypes      map[oid.Oid]struct{}
 	userDefinedTypesSlice []*types.T
+	userDefinedFunctions  map[*tree.Overload]*types.T
 
 	// deps stores information about all data source objects depended on by the
 	// query, as well as the privileges required to access them. The objects are
@@ -344,6 +346,21 @@ func (md *Metadata) CheckDependencies(
 			return false, nil
 		}
 	}
+
+	for fn := range md.userDefinedFunctions {
+		_, toCheck, err := catalog.ResolveFunctionByOID(ctx, fn.Oid)
+		if err != nil {
+			// Handle when the function no longer exists.
+			if pgerror.GetPGCode(err) == pgcode.UndefinedObject ||
+				errors.Is(err, ctlg.ErrDescriptorDropped) {
+				return false, nil
+			}
+			return false, err
+		}
+		if fn.Version != toCheck.Version {
+			return false, nil
+		}
+	}
 	return true, nil
 }
 
@@ -376,6 +393,20 @@ func (md *Metadata) AddUserDefinedType(typ *types.T) {
 // AllUserDefinedTypes returns all user defined types contained in this query.
 func (md *Metadata) AllUserDefinedTypes() []*types.T {
 	return md.userDefinedTypesSlice
+}
+
+func (md *Metadata) AddUserDefinedFn(fn *tree.Overload, typ *types.T) {
+	if !fn.IsUDF {
+		return
+	}
+
+	if md.userDefinedFunctions == nil {
+		md.userDefinedFunctions = map[*tree.Overload]*types.T{}
+	}
+
+	if typ != nil {
+		md.userDefinedFunctions[fn] = typ
+	}
 }
 
 // AddTable indexes a new reference to a table within the query. Separate
@@ -517,6 +548,27 @@ func (md *Metadata) DuplicateTable(
 	}
 
 	return newTabID
+}
+
+func (md *Metadata) CheckDependencyChangedOnUDF(tabID TableID) (
+	upToDate bool, err error) {
+	if md.tables == nil || tabID.index() >= len(md.tables) {
+		panic(errors.AssertionFailedf("table with ID %d does not exist", tabID))
+	}
+
+	tabMeta := md.TableMeta(tabID)
+	tab := tabMeta.Table
+	tabName := tab.Name()
+
+	for fn := range md.userDefinedFunctions {
+		overload := fn.FixedReturnType()
+		if overload.TypeMeta.ImplicitRecordType && tabName.String() == overload.Name() {
+			if !md.userDefinedFunctions[fn].Identical(overload) {
+				return false, err
+			}
+		}
+	}
+	return true, nil
 }
 
 // TableMeta looks up the metadata for the table associated with the given table
